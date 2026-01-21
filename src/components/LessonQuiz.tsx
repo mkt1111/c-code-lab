@@ -35,11 +35,16 @@ export const LessonQuiz = ({ lessonId, onComplete }: LessonQuizProps) => {
   }
 
   const handleAnswer = (answer: string, isCorrect: boolean) => {
-    if (selectedAnswer !== null) return;
-    setSelectedAnswer(answer);
-    if (isCorrect) {
+    // Allow changing answer - track if previously correct to adjust count
+    const wasCorrect = selectedAnswer !== null && shuffledAnswers.find(a => a.text === selectedAnswer)?.isCorrect;
+    
+    if (wasCorrect && !isCorrect) {
+      setCorrectCount(prev => prev - 1);
+    } else if (!wasCorrect && isCorrect) {
       setCorrectCount(prev => prev + 1);
     }
+    
+    setSelectedAnswer(answer);
   };
 
   const handleNext = () => {
@@ -125,7 +130,7 @@ export const LessonQuiz = ({ lessonId, onComplete }: LessonQuizProps) => {
               <div key={index}>
                 <button
                   onClick={() => handleAnswer(answer.text, answer.isCorrect)}
-                  disabled={selectedAnswer !== null}
+                  disabled={false}
                   className={cn(
                     "w-full p-3 rounded-lg border text-left text-sm transition-all",
                     "hover:border-primary/50 disabled:cursor-default",
