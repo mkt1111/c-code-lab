@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { categories, getAllLessons } from "@/data/lessons";
-import { useLessonProgress } from "@/hooks/useLessonProgress";
+import { useLessonProgress } from "@/contexts/LessonProgressContext";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
