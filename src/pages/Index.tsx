@@ -1,12 +1,55 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { Header } from "@/components/Header";
+import { CategorySection } from "@/components/CategorySection";
+import { categories } from "@/data/lessons";
+import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
+import { FileQuestion, Sparkles } from "lucide-react";
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background">
+      <Header />
+      
+      <main className="container mx-auto px-4 py-8">
+        {/* Hero Section */}
+        <section className="text-center py-12 mb-12 animate-fade-in">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm mb-6">
+            <Sparkles className="w-4 h-4" />
+            <span>Master C# Programming Concepts</span>
+          </div>
+          
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+            <span className="text-gradient">C# Programming</span>
+            <br />
+            <span className="text-foreground">Concepts Lab</span>
+          </h1>
+          
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-8">
+            Learn OOP principles, data structures, keywords, and optimization techniques
+            with interactive lessons and code examples.
+          </p>
+          
+          <Link to="/quiz">
+            <Button size="lg" className="gap-2 glow-primary">
+              <FileQuestion className="w-5 h-5" />
+              Test Your Knowledge
+            </Button>
+          </Link>
+        </section>
+
+        {/* Categories */}
+        <div className="space-y-16">
+          {categories.map((category) => (
+            <CategorySection key={category.id} category={category} />
+          ))}
+        </div>
+      </main>
+      
+      <footer className="border-t border-border py-8 mt-16">
+        <div className="container mx-auto px-4 text-center text-muted-foreground text-sm">
+          <p>C# Programming Concepts Lab • Learn, Practice, Master</p>
+        </div>
+      </footer>
     </div>
   );
 };
