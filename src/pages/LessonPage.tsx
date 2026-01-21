@@ -19,7 +19,7 @@ const LessonPage = () => {
   const lesson = id ? getLessonById(id) : undefined;
   const category = id ? getCategoryByLessonId(id) : undefined;
   const { prev, next } = id ? getAdjacentLessons(id) : { prev: undefined, next: undefined };
-  const { markCompleted, isCompleted } = useLessonProgress();
+  const { markCompleted, isCompleted, resetKey } = useLessonProgress();
 
   // Scroll to top when lesson changes
   useEffect(() => {
@@ -200,7 +200,7 @@ const LessonPage = () => {
               {/* Mini Quiz */}
               <div className="mb-8">
                 <h2 className="text-xl font-semibold text-foreground mb-4">Test Your Understanding</h2>
-                <LessonQuiz lessonId={id!} onComplete={handleQuizComplete} />
+                <LessonQuiz key={`${id}-${resetKey}`} lessonId={id!} onComplete={handleQuizComplete} />
               </div>
 
               <NavigationButtons prev={prev} next={next} />
