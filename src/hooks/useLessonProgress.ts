@@ -51,10 +51,16 @@ export const useLessonProgress = () => {
     };
   }, [completedLessons]);
 
+  const resetProgress = useCallback(() => {
+    setCompletedLessons(new Set());
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
   return {
     completedLessons,
     markCompleted,
     isCompleted,
-    getProgress
+    getProgress,
+    resetProgress
   };
 };
