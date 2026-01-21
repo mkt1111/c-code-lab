@@ -373,5 +373,125 @@ export const lessonQuizzes: Record<string, LessonQuizQuestion[]> = {
         { answer: "With generic collections", explanation: "Parallel works fine with generics. The issue is I/O blocking threads." }
       ]
     }
+  ],
+  "pattern-repository": [
+    {
+      question: "What is the primary benefit of the Repository Pattern?",
+      correctAnswer: "Decoupling business logic from data access implementation details",
+      wrongAnswers: [
+        { answer: "Making database queries faster", explanation: "The pattern is about abstraction, not performance. It may even add slight overhead." },
+        { answer: "Automatically caching all database results", explanation: "Caching is a separate concern. Repository provides abstraction, not automatic caching." },
+        { answer: "Eliminating the need for a database", explanation: "Repositories still need a data source. They abstract access, not eliminate storage." }
+      ]
+    },
+    {
+      question: "Why should repositories return IEnumerable<T> instead of IQueryable<T>?",
+      correctAnswer: "To prevent leaking ORM-specific query capabilities to consumers",
+      wrongAnswers: [
+        { answer: "IEnumerable is faster than IQueryable", explanation: "Actually IQueryable can be faster as it defers execution. The issue is abstraction leakage." },
+        { answer: "IQueryable doesn't work with Entity Framework", explanation: "IQueryable is central to EF. The concern is that exposing it couples consumers to EF." },
+        { answer: "IEnumerable supports more LINQ operations", explanation: "IQueryable supports the same LINQ operations. The issue is hiding the data access layer." }
+      ]
+    }
+  ],
+  "pattern-unit-of-work": [
+    {
+      question: "What problem does the Unit of Work pattern solve?",
+      correctAnswer: "Coordinating changes across multiple repositories in a single transaction",
+      wrongAnswers: [
+        { answer: "Making individual repository methods faster", explanation: "UoW is about transaction coordination, not individual operation speed." },
+        { answer: "Replacing the need for a database connection", explanation: "UoW still requires database connections. It manages transactions across repositories." },
+        { answer: "Automatically retrying failed database operations", explanation: "Retry logic is separate. UoW ensures atomicity, not automatic retries." }
+      ]
+    },
+    {
+      question: "What happens if repositories call SaveChanges independently without Unit of Work?",
+      correctAnswer: "You lose transactional atomicity - partial updates may occur on failure",
+      wrongAnswers: [
+        { answer: "The application will throw a compile-time error", explanation: "There's no compile-time enforcement. The issue is runtime data inconsistency." },
+        { answer: "Database performance will be significantly slower", explanation: "Performance isn't the main issue. Data consistency and atomicity are the concerns." },
+        { answer: "Entity Framework will automatically create a transaction", explanation: "EF wraps individual SaveChanges in transactions, but not across multiple calls." }
+      ]
+    }
+  ],
+  "pattern-dependency-injection": [
+    {
+      question: "What is the Service Locator anti-pattern?",
+      correctAnswer: "Calling IServiceProvider.GetService directly instead of using constructor injection",
+      wrongAnswers: [
+        { answer: "Registering too many services in the DI container", explanation: "Having many services is fine. Service Locator hides dependencies by resolving at runtime." },
+        { answer: "Using interfaces instead of concrete classes", explanation: "Using interfaces is actually a best practice. Service Locator is about how you resolve dependencies." },
+        { answer: "Injecting ILogger into services", explanation: "Injecting ILogger is correct DI usage. Service Locator is requesting services from the container directly." }
+      ]
+    },
+    {
+      question: "What is a 'captive dependency' problem in DI?",
+      correctAnswer: "Injecting a Scoped service into a Singleton, causing it to live longer than intended",
+      wrongAnswers: [
+        { answer: "When a service has too many constructor parameters", explanation: "That's constructor over-injection. Captive dependency is about mismatched lifetimes." },
+        { answer: "Registering the same interface with multiple implementations", explanation: "Multiple implementations are valid. Captive dependency is about lifetime mismatches." },
+        { answer: "Using DI in static classes", explanation: "Static classes and DI don't mix well, but that's not captive dependency specifically." }
+      ]
+    }
+  ],
+  "pattern-options": [
+    {
+      question: "What is the key advantage of IOptions<T> over reading IConfiguration directly?",
+      correctAnswer: "Compile-time type safety and IntelliSense support",
+      wrongAnswers: [
+        { answer: "IOptions is faster at runtime", explanation: "Performance is similar. The benefit is type safety and preventing typos in config keys." },
+        { answer: "IConfiguration cannot read from appsettings.json", explanation: "IConfiguration reads from appsettings.json fine. IOptions provides type-safe binding." },
+        { answer: "IOptions automatically encrypts sensitive values", explanation: "Encryption is not automatic. IOptions provides strongly-typed access, not security." }
+      ]
+    },
+    {
+      question: "When should you use IOptionsMonitor<T> instead of IOptions<T>?",
+      correctAnswer: "When you need configuration changes to apply without restarting the application",
+      wrongAnswers: [
+        { answer: "When you have more than 5 configuration properties", explanation: "The number of properties doesn't matter. IOptionsMonitor is for live reloading." },
+        { answer: "When configuration values contain secrets", explanation: "Both handle secrets the same way. IOptionsMonitor is specifically for live updates." },
+        { answer: "When injecting into Transient services", explanation: "Lifetime doesn't determine the choice. IOptionsMonitor provides real-time config updates." }
+      ]
+    }
+  ],
+  "pattern-mediator": [
+    {
+      question: "What is the main purpose of MediatR's pipeline behaviors?",
+      correctAnswer: "Adding cross-cutting concerns like logging and validation to all requests",
+      wrongAnswers: [
+        { answer: "Making handlers run in parallel for better performance", explanation: "Pipeline behaviors run sequentially around handlers, not for parallelism." },
+        { answer: "Replacing the need for dependency injection", explanation: "MediatR uses DI itself. Behaviors add middleware-like functionality to the request pipeline." },
+        { answer: "Automatically caching handler responses", explanation: "Caching could be implemented as a behavior, but it's not the main purpose." }
+      ]
+    },
+    {
+      question: "What is the difference between IRequest<T> and INotification in MediatR?",
+      correctAnswer: "IRequest has one handler and returns a response; INotification has many handlers and no return value",
+      wrongAnswers: [
+        { answer: "IRequest is for queries and INotification is for commands", explanation: "Both commands and queries use IRequest. INotification is for publishing events to multiple handlers." },
+        { answer: "INotification is faster because it's asynchronous", explanation: "Both can be async. The difference is one-to-one vs one-to-many handler relationship." },
+        { answer: "IRequest only works with primitive return types", explanation: "IRequest works with any type. The distinction is about handler count and return values." }
+      ]
+    }
+  ],
+  "pattern-result": [
+    {
+      question: "When should you use the Result pattern instead of throwing exceptions?",
+      correctAnswer: "For expected failures like validation errors and business rule violations",
+      wrongAnswers: [
+        { answer: "For all error conditions including network failures", explanation: "Infrastructure failures (network, disk) should still throw exceptions. Result is for expected business cases." },
+        { answer: "Only when working with async methods", explanation: "Result applies to both sync and async. It's about expected vs unexpected failures." },
+        { answer: "When you want to hide errors from callers", explanation: "Result makes errors explicit, not hidden. Callers must check IsSuccess." }
+      ]
+    },
+    {
+      question: "What is railway-oriented programming in the context of the Result pattern?",
+      correctAnswer: "Chaining operations where each step can succeed or fail, stopping at the first failure",
+      wrongAnswers: [
+        { answer: "Running operations in parallel on multiple threads", explanation: "Railway-oriented is about sequential chaining with early exit, not parallelism." },
+        { answer: "A pattern for handling database transactions", explanation: "Railway-oriented is about Result chaining, not specifically transactions." },
+        { answer: "A way to retry failed operations automatically", explanation: "It's about chaining and early exit on failure, not automatic retries." }
+      ]
+    }
   ]
 };

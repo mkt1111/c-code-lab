@@ -2130,6 +2130,999 @@ Parallel.ForEach(new[] { 1, 2, 3 }, n => Process(n));`,
         }
       }
     ]
+  },
+  {
+    id: "modern-patterns",
+    title: "Modern Patterns",
+    description: "Common design patterns used in modern C# applications",
+    icon: "🏗️",
+    lessons: [
+      {
+        id: "pattern-repository",
+        title: "Repository Pattern",
+        category: "Modern Patterns",
+        description: "Abstracting data access logic from business logic",
+        content: {
+          definition: "The Repository Pattern mediates between the domain and data mapping layers, acting like an in-memory collection of domain objects. It provides a clean separation between data access code and business logic, making your application more testable and maintainable.",
+          syntax: `public interface IRepository<T> where T : class
+{
+    Task<T?> GetByIdAsync(int id);
+    Task<IEnumerable<T>> GetAllAsync();
+    Task<T> AddAsync(T entity);
+    Task UpdateAsync(T entity);
+    Task DeleteAsync(int id);
+}
+
+public class UserRepository : IRepository<User>
+{
+    private readonly DbContext _context;
+    
+    public UserRepository(DbContext context)
+    {
+        _context = context;
+    }
+    
+    public async Task<User?> GetByIdAsync(int id)
+    {
+        return await _context.Users.FindAsync(id);
+    }
+    
+    public async Task<IEnumerable<User>> GetAllAsync()
+    {
+        return await _context.Users.ToListAsync();
+    }
+    
+    public async Task<User> AddAsync(User entity)
+    {
+        _context.Users.Add(entity);
+        await _context.SaveChangesAsync();
+        return entity;
+    }
+    
+    public async Task UpdateAsync(User entity)
+    {
+        _context.Users.Update(entity);
+        await _context.SaveChangesAsync();
+    }
+    
+    public async Task DeleteAsync(int id)
+    {
+        var entity = await GetByIdAsync(id);
+        if (entity != null)
+        {
+            _context.Users.Remove(entity);
+            await _context.SaveChangesAsync();
+        }
+    }
+}`,
+          useCases: [
+            "Decoupling business logic from data access - your services work with abstractions, not concrete database implementations, allowing you to change ORMs or data sources without touching business code",
+            "Unit testing without a database - by mocking IRepository<T>, you can test business logic in isolation without spinning up a real database, making tests fast and reliable",
+            "Centralizing data access queries - instead of scattered LINQ queries throughout your codebase, all data operations live in one place, making optimization and debugging easier",
+            "Switching data sources - today you use SQL Server, tomorrow you might need MongoDB for some entities; with repository abstraction, you just swap implementations",
+            "Implementing caching transparently - wrap your repository with a caching decorator without changing any consuming code"
+          ],
+          pitfalls: [
+            "Generic repositories that don't fit your domain - a one-size-fits-all IRepository<T> often leads to awkward workarounds when you need complex queries; consider domain-specific repositories like IOrderRepository with methods like GetPendingOrdersForCustomer()",
+            "Leaking IQueryable outside the repository exposes your ORM and defeats abstraction - consumers become coupled to Entity Framework, and you can't easily switch to Dapper or raw SQL",
+            "Not considering Unit of Work pattern - if you have multiple repositories modifying data, you need coordinated transactions; without UoW, you risk partial updates and data corruption",
+            "Over-abstracting simple CRUD apps - for small apps with straightforward data access, repositories add unnecessary layers; directly using DbContext may be simpler and more appropriate",
+            "Ignoring async patterns - synchronous data access blocks threads and kills scalability in web applications; always provide async methods for I/O operations"
+          ],
+          bestPractices: [
+            "Create domain-specific repositories (IUserRepository, IOrderRepository) with meaningful method names like GetActiveUsers() rather than forcing everything through generic CRUD methods",
+            "Return IEnumerable<T> or concrete collections rather than IQueryable<T> to keep the data access boundary clean and prevent consumers from modifying queries",
+            "Combine with Unit of Work pattern for transactional consistency - UoW coordinates commits across multiple repositories and ensures atomicity",
+            "Use repository for complex queries and caching, but don't over-engineer simple scenarios - sometimes direct DbContext access is the right choice",
+            "Consider the Specification pattern for complex, reusable query criteria - it keeps repositories focused on data access while moving query logic into composable specifications"
+          ],
+          goodExample: {
+            code: `// Domain-specific repository with meaningful methods
+public interface IOrderRepository
+{
+    Task<Order?> GetByIdAsync(int id);
+    Task<IEnumerable<Order>> GetPendingOrdersAsync();
+    Task<IEnumerable<Order>> GetOrdersByCustomerAsync(int customerId);
+    Task<Order> CreateAsync(Order order);
+    Task UpdateStatusAsync(int orderId, OrderStatus status);
+}
+
+public class OrderRepository : IOrderRepository
+{
+    private readonly AppDbContext _context;
+    
+    public OrderRepository(AppDbContext context) => _context = context;
+    
+    public async Task<IEnumerable<Order>> GetPendingOrdersAsync()
+    {
+        return await _context.Orders
+            .Where(o => o.Status == OrderStatus.Pending)
+            .Include(o => o.Items)
+            .OrderBy(o => o.CreatedAt)
+            .ToListAsync();
+    }
+    
+    public async Task UpdateStatusAsync(int orderId, OrderStatus status)
+    {
+        var order = await GetByIdAsync(orderId);
+        if (order != null)
+        {
+            order.Status = status;
+            order.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+    }
+}`,
+            explanation: "Domain-specific methods with clear intent, encapsulated queries, and proper async usage"
+          },
+          badExample: {
+            code: `// Leaky abstraction - exposes IQueryable
+public interface IRepository<T>
+{
+    IQueryable<T> Query(); // Leaks EF dependency!
+}
+
+// Usage forces consumers to know EF
+var orders = repo.Query()
+    .Include(o => o.Items) // EF-specific!
+    .Where(o => o.Status == "Pending")
+    .ToList(); // Executes here - where's the boundary?
+
+// Generic CRUD doesn't fit the domain
+public interface IRepository<T>
+{
+    T GetById(int id); // Synchronous - blocks threads!
+    void Update(T entity);
+}
+
+// Awkward workarounds for domain logic
+var pending = repo.GetAll().Where(o => o.Status == "Pending"); // Loads ALL orders!`,
+            explanation: "Leaking IQueryable, synchronous operations, and generic methods that don't express domain intent"
+          }
+        }
+      },
+      {
+        id: "pattern-unit-of-work",
+        title: "Unit of Work",
+        category: "Modern Patterns",
+        description: "Coordinating changes across multiple repositories in a transaction",
+        content: {
+          definition: "The Unit of Work pattern maintains a list of objects affected by a business transaction and coordinates the writing out of changes and the resolution of concurrency problems. It tracks all changes to objects during a business transaction and commits them as a single unit, ensuring data consistency.",
+          syntax: `public interface IUnitOfWork : IDisposable
+{
+    IUserRepository Users { get; }
+    IOrderRepository Orders { get; }
+    IProductRepository Products { get; }
+    
+    Task<int> SaveChangesAsync();
+    Task BeginTransactionAsync();
+    Task CommitTransactionAsync();
+    Task RollbackTransactionAsync();
+}
+
+public class UnitOfWork : IUnitOfWork
+{
+    private readonly AppDbContext _context;
+    private IDbContextTransaction? _transaction;
+    
+    public IUserRepository Users { get; }
+    public IOrderRepository Orders { get; }
+    public IProductRepository Products { get; }
+    
+    public UnitOfWork(AppDbContext context)
+    {
+        _context = context;
+        Users = new UserRepository(context);
+        Orders = new OrderRepository(context);
+        Products = new ProductRepository(context);
+    }
+    
+    public async Task<int> SaveChangesAsync()
+    {
+        return await _context.SaveChangesAsync();
+    }
+    
+    public async Task BeginTransactionAsync()
+    {
+        _transaction = await _context.Database.BeginTransactionAsync();
+    }
+    
+    public async Task CommitTransactionAsync()
+    {
+        await _transaction?.CommitAsync();
+    }
+    
+    public async Task RollbackTransactionAsync()
+    {
+        await _transaction?.RollbackAsync();
+    }
+    
+    public void Dispose()
+    {
+        _transaction?.Dispose();
+        _context.Dispose();
+    }
+}`,
+          useCases: [
+            "Ensuring atomicity across multiple repositories - when creating an order requires updating user points, inventory counts, and order records, all must succeed or all must fail together",
+            "Managing database transactions explicitly - complex business operations may need fine-grained control over transaction boundaries that automatic SaveChanges() doesn't provide",
+            "Batching multiple changes into a single database roundtrip - instead of saving after each repository operation, batch all changes and commit once for better performance",
+            "Implementing saga patterns for distributed transactions - coordinate changes across multiple bounded contexts with compensation logic on failure",
+            "Optimistic concurrency handling - detect and resolve conflicts when multiple users modify the same data simultaneously"
+          ],
+          pitfalls: [
+            "Creating UnitOfWork per repository instead of per business transaction - each repository having its own UoW defeats the purpose; one UoW should span all repositories involved in a single operation",
+            "Not disposing properly leads to connection leaks - UoW holds database connections; forgetting to dispose (or not using 'using') exhausts connection pool and crashes your app",
+            "Mixing UoW with repositories that call SaveChanges internally - if repositories save independently, you lose transactional atomicity; only UoW should call SaveChanges",
+            "Long-running transactions hurt concurrency - holding locks across user interactions or long processes blocks other users; keep transactions short and focused",
+            "Overcomplicating simple CRUD operations - not every operation needs explicit transaction management; EF's SaveChanges already wraps changes in a transaction"
+          ],
+          bestPractices: [
+            "Inject IUnitOfWork into services, not individual repositories - this makes the transaction boundary clear and ensures all repositories share the same context",
+            "Use 'using' statements or implement IAsyncDisposable to guarantee cleanup even when exceptions occur",
+            "Keep transaction scope minimal - open transaction, do work, commit/rollback immediately; don't hold transactions across await boundaries when possible",
+            "Consider whether you really need UoW - Entity Framework's DbContext already implements Unit of Work; explicit UoW is useful when you need repository abstraction or additional coordination",
+            "Combine with repository pattern for clean architecture - UoW manages the transaction, repositories handle specific entity operations"
+          ],
+          goodExample: {
+            code: `public class OrderService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    
+    public OrderService(IUnitOfWork unitOfWork)
+    {
+        _unitOfWork = unitOfWork;
+    }
+    
+    public async Task<Order> PlaceOrderAsync(CreateOrderDto dto)
+    {
+        await _unitOfWork.BeginTransactionAsync();
+        
+        try
+        {
+            // Multiple repository operations in one transaction
+            var user = await _unitOfWork.Users.GetByIdAsync(dto.UserId);
+            
+            foreach (var item in dto.Items)
+            {
+                await _unitOfWork.Products.DecrementStockAsync(
+                    item.ProductId, item.Quantity);
+            }
+            
+            var order = new Order { UserId = dto.UserId, Items = dto.Items };
+            await _unitOfWork.Orders.AddAsync(order);
+            
+            user.LoyaltyPoints += CalculatePoints(order);
+            await _unitOfWork.Users.UpdateAsync(user);
+            
+            // Single commit for all changes
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.CommitTransactionAsync();
+            
+            return order;
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync();
+            throw;
+        }
+    }
+}`,
+            explanation: "All repository operations within one transaction; explicit commit/rollback; clean error handling"
+          },
+          badExample: {
+            code: `// Each repository saves independently - no atomicity!
+public class OrderService
+{
+    private readonly IUserRepository _users;
+    private readonly IOrderRepository _orders;
+    
+    public async Task PlaceOrderAsync(OrderDto dto)
+    {
+        var order = new Order(dto);
+        await _orders.AddAsync(order);
+        await _orders.SaveChangesAsync(); // Commits immediately!
+        
+        // If this fails, order is saved but points aren't!
+        var user = await _users.GetByIdAsync(dto.UserId);
+        user.Points += 100;
+        await _users.SaveChangesAsync(); // Separate transaction!
+    }
+}
+
+// Not disposing - connection leak!
+public async Task DoWork()
+{
+    var uow = new UnitOfWork(new AppDbContext());
+    await uow.Orders.AddAsync(order);
+    await uow.SaveChangesAsync();
+    // uow never disposed! Connection leaked!
+}`,
+            explanation: "Independent saves break atomicity; missing disposal causes connection leaks"
+          }
+        }
+      },
+      {
+        id: "pattern-dependency-injection",
+        title: "Dependency Injection",
+        category: "Modern Patterns",
+        description: "Providing dependencies to classes from external sources",
+        content: {
+          definition: "Dependency Injection (DI) is a design pattern where objects receive their dependencies from external sources rather than creating them internally. This inverts the control of object creation, making classes loosely coupled, more testable, and easier to maintain. Modern .NET has built-in DI support through IServiceCollection.",
+          syntax: `// 1. Define abstractions
+public interface IEmailService
+{
+    Task SendAsync(string to, string subject, string body);
+}
+
+public interface IUserRepository
+{
+    Task<User?> GetByIdAsync(int id);
+}
+
+// 2. Implement concrete classes
+public class SmtpEmailService : IEmailService
+{
+    private readonly SmtpSettings _settings;
+    
+    public SmtpEmailService(IOptions<SmtpSettings> settings)
+    {
+        _settings = settings.Value;
+    }
+    
+    public async Task SendAsync(string to, string subject, string body)
+    {
+        // Send via SMTP
+    }
+}
+
+// 3. Inject dependencies via constructor
+public class UserService
+{
+    private readonly IUserRepository _repository;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<UserService> _logger;
+    
+    public UserService(
+        IUserRepository repository,
+        IEmailService emailService,
+        ILogger<UserService> logger)
+    {
+        _repository = repository;
+        _emailService = emailService;
+        _logger = logger;
+    }
+}
+
+// 4. Register in DI container
+services.AddScoped<IUserRepository, UserRepository>();
+services.AddTransient<IEmailService, SmtpEmailService>();
+services.AddScoped<UserService>();`,
+          useCases: [
+            "Unit testing with mock dependencies - inject fake implementations that return controlled data, making tests fast, deterministic, and isolated from external systems",
+            "Swapping implementations without code changes - switch from SmtpEmailService to SendGridEmailService by changing one line in DI registration, not every consuming class",
+            "Managing object lifetimes consistently - Singleton, Scoped, and Transient lifetimes are managed centrally, preventing memory leaks and ensuring proper disposal",
+            "Configuring different environments - register different implementations for development (in-memory database) vs production (SQL Server) via configuration",
+            "Cross-cutting concerns like logging and caching - inject decorators or interceptors that add behavior without modifying the original classes"
+          ],
+          pitfalls: [
+            "Service Locator anti-pattern (calling IServiceProvider.GetService directly) - this hides dependencies, makes testing harder, and can throw runtime errors for unregistered services; prefer constructor injection",
+            "Captive dependencies: injecting Scoped service into Singleton causes the scoped instance to live forever, leading to stale data and memory issues",
+            "Constructor over-injection (5+ dependencies) signals a class is doing too much - refactor into smaller, focused classes with fewer dependencies",
+            "Registering concrete types instead of interfaces - you lose the ability to swap implementations and mock for testing; always program to abstractions",
+            "Circular dependencies cause runtime exceptions - if A depends on B and B depends on A, the container can't resolve either; refactor to break the cycle using events or a mediator"
+          ],
+          bestPractices: [
+            "Use constructor injection for required dependencies - it makes dependencies explicit, ensures they're provided at creation, and enables immutability",
+            "Register interfaces, not concrete types: services.AddScoped<IUserService, UserService>() allows swapping implementations without changing consuming code",
+            "Choose appropriate lifetimes: Transient for lightweight stateless services, Scoped for per-request state (DbContext, current user), Singleton for expensive shared resources (HttpClient, caches)",
+            "Keep constructors simple - only assign dependencies to fields; don't do complex initialization that could fail or have side effects",
+            "Use IOptions<T> pattern for configuration - it supports validation, reloading, and named options for complex scenarios"
+          ],
+          goodExample: {
+            code: `// Clean constructor injection with clear dependencies
+public class OrderService : IOrderService
+{
+    private readonly IOrderRepository _repository;
+    private readonly IPaymentGateway _payments;
+    private readonly IEmailService _emails;
+    private readonly ILogger<OrderService> _logger;
+    
+    public OrderService(
+        IOrderRepository repository,
+        IPaymentGateway payments,
+        IEmailService emails,
+        ILogger<OrderService> logger)
+    {
+        _repository = repository;
+        _payments = payments;
+        _emails = emails;
+        _logger = logger;
+    }
+    
+    public async Task<OrderResult> ProcessOrderAsync(Order order)
+    {
+        _logger.LogInformation("Processing order {OrderId}", order.Id);
+        
+        var paymentResult = await _payments.ChargeAsync(order.Total);
+        if (!paymentResult.Success)
+            return OrderResult.Failed(paymentResult.Error);
+        
+        await _repository.SaveAsync(order);
+        await _emails.SendOrderConfirmationAsync(order);
+        
+        return OrderResult.Success(order);
+    }
+}
+
+// Registration in Program.cs
+services.AddScoped<IOrderRepository, OrderRepository>();
+services.AddScoped<IPaymentGateway, StripePaymentGateway>();
+services.AddTransient<IEmailService, SmtpEmailService>();
+services.AddScoped<IOrderService, OrderService>();`,
+            explanation: "Constructor injection, interfaces for all dependencies, appropriate lifetime scopes"
+          },
+          badExample: {
+            code: `// Service Locator anti-pattern
+public class OrderService
+{
+    private readonly IServiceProvider _provider;
+    
+    public OrderService(IServiceProvider provider)
+    {
+        _provider = provider; // Hidden dependencies!
+    }
+    
+    public void Process(Order order)
+    {
+        // Dependencies hidden - what does this class need?
+        var repo = _provider.GetService<IOrderRepository>();
+        var email = _provider.GetService<IEmailService>(); // Might be null!
+        
+        repo.Save(order);
+        email.Send(order.Email, "Confirmed"); // NullReferenceException?
+    }
+}
+
+// Creating dependencies internally
+public class OrderService
+{
+    private readonly OrderRepository _repo = new OrderRepository();
+    private readonly EmailService _email = new EmailService();
+    // Tightly coupled - can't mock for tests!
+    // Can't swap implementations!
+}`,
+            explanation: "Service Locator hides dependencies; 'new' creates tight coupling and prevents testing"
+          }
+        }
+      },
+      {
+        id: "pattern-options",
+        title: "Options Pattern",
+        category: "Modern Patterns",
+        description: "Strongly-typed access to configuration settings",
+        content: {
+          definition: "The Options Pattern provides a way to access groups of related configuration settings through strongly-typed classes. Instead of reading raw strings from configuration, you bind sections to POCO classes and inject them via IOptions<T>, IOptionsSnapshot<T>, or IOptionsMonitor<T>.",
+          syntax: `// 1. Define options class
+public class EmailSettings
+{
+    public const string SectionName = "Email";
+    
+    public string SmtpServer { get; set; } = string.Empty;
+    public int Port { get; set; } = 587;
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public bool UseSsl { get; set; } = true;
+}
+
+// 2. Configure in appsettings.json
+{
+    "Email": {
+        "SmtpServer": "smtp.example.com",
+        "Port": 587,
+        "Username": "user@example.com",
+        "Password": "secret",
+        "UseSsl": true
+    }
+}
+
+// 3. Register in Program.cs
+services.Configure<EmailSettings>(
+    configuration.GetSection(EmailSettings.SectionName));
+
+// Optional: Add validation
+services.AddOptions<EmailSettings>()
+    .Bind(configuration.GetSection(EmailSettings.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// 4. Inject and use
+public class EmailService
+{
+    private readonly EmailSettings _settings;
+    
+    public EmailService(IOptions<EmailSettings> options)
+    {
+        _settings = options.Value;
+    }
+    
+    public async Task SendAsync(string to, string message)
+    {
+        using var client = new SmtpClient(_settings.SmtpServer, _settings.Port);
+        client.EnableSsl = _settings.UseSsl;
+        // ...
+    }
+}`,
+          useCases: [
+            "Replacing magic strings with compile-time safety - configuration['Email:SmtpServer'] fails silently if misspelled; IOptions<EmailSettings> gives IntelliSense and compile errors",
+            "Validating configuration at startup - catch missing or invalid settings when the app starts, not at 3 AM when a user hits the code path that reads the config",
+            "Reloading configuration without restart - IOptionsMonitor<T> provides real-time updates when appsettings.json changes, useful for feature flags or logging levels",
+            "Per-request configuration with IOptionsSnapshot<T> - each request gets a fresh snapshot, useful when config might change during long-running operations",
+            "Named options for multiple instances - configure multiple instances like databases or API endpoints with the same schema but different values"
+          ],
+          pitfalls: [
+            "Using IConfiguration directly instead of strongly-typed options - string-based access is error-prone, doesn't validate, and spreads configuration knowledge throughout your code",
+            "Not validating options - invalid configuration causes runtime failures at unpredictable times; use ValidateDataAnnotations() and ValidateOnStart() to fail fast",
+            "Confusing IOptions<T> vs IOptionsSnapshot<T> vs IOptionsMonitor<T> - IOptions is singleton (read once), IOptionsSnapshot is scoped (per-request), IOptionsMonitor reloads in real-time",
+            "Storing secrets in appsettings.json - passwords and API keys should use User Secrets in development and Azure Key Vault or environment variables in production",
+            "Deeply nested configuration structures - keep options classes focused; if you have EmailSettings.Smtp.Security.Ssl.Certificate, you've gone too deep"
+          ],
+          bestPractices: [
+            "Create focused options classes for each feature area - EmailSettings, DatabaseSettings, FeatureFlags rather than one giant AppSettings class",
+            "Always add validation with data annotations and ValidateOnStart() to fail fast on misconfiguration: services.AddOptions<T>().ValidateDataAnnotations().ValidateOnStart()",
+            "Use IOptions<T> for Singleton services, IOptionsSnapshot<T> for Scoped services, and IOptionsMonitor<T> when you need real-time configuration reloading",
+            "Provide sensible defaults in the options class itself - public int Port { get; set; } = 587; - so partial configuration still works",
+            "Use the const string SectionName = 'X' pattern to keep the section name close to the class definition and avoid typos"
+          ],
+          goodExample: {
+            code: `// Options class with validation
+public class JwtSettings
+{
+    public const string SectionName = "Jwt";
+    
+    [Required]
+    public string Secret { get; set; } = string.Empty;
+    
+    [Required]
+    public string Issuer { get; set; } = string.Empty;
+    
+    [Required] 
+    public string Audience { get; set; } = string.Empty;
+    
+    [Range(1, 1440)]
+    public int ExpirationMinutes { get; set; } = 60;
+}
+
+// Registration with validation
+services.AddOptions<JwtSettings>()
+    .Bind(configuration.GetSection(JwtSettings.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart(); // Fails immediately if invalid
+
+// Clean injection
+public class JwtService
+{
+    private readonly JwtSettings _settings;
+    
+    public JwtService(IOptions<JwtSettings> options)
+    {
+        _settings = options.Value;
+    }
+    
+    public string GenerateToken(User user)
+    {
+        var key = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(_settings.Secret));
+        // Use _settings.Issuer, _settings.Audience, etc.
+    }
+}`,
+            explanation: "Data annotation validation, ValidateOnStart for early failure, clean injection pattern"
+          },
+          badExample: {
+            code: `// Magic strings everywhere
+public class JwtService
+{
+    private readonly IConfiguration _config;
+    
+    public JwtService(IConfiguration config)
+    {
+        _config = config;
+    }
+    
+    public string GenerateToken(User user)
+    {
+        // Typo-prone, no validation, no IntelliSense
+        var secret = _config["Jwt:Secert"]; // Typo! Returns null
+        var expiry = _config["Jwt:ExpirationMinutes"]; // String, need to parse
+        
+        if (string.IsNullOrEmpty(secret))
+        {
+            // Discovered at runtime, maybe in production!
+            throw new Exception("JWT secret not configured");
+        }
+        
+        int.TryParse(expiry, out var minutes); // What if it fails?
+    }
+}`,
+            explanation: "Magic strings, no compile-time safety, runtime failures, manual parsing"
+          }
+        }
+      },
+      {
+        id: "pattern-mediator",
+        title: "Mediator Pattern (MediatR)",
+        category: "Modern Patterns",
+        description: "Decoupling request handling through a central mediator",
+        content: {
+          definition: "The Mediator Pattern defines an object that encapsulates how a set of objects interact. Instead of objects communicating directly, they send requests to a mediator which routes them to appropriate handlers. MediatR is a popular .NET implementation that promotes loose coupling and clean architecture through CQRS-style request/handler separation.",
+          syntax: `// 1. Define a request (query or command)
+public record GetUserByIdQuery(int Id) : IRequest<UserDto?>;
+
+public record CreateUserCommand(string Name, string Email) : IRequest<int>;
+
+// 2. Define handlers
+public class GetUserByIdHandler : IRequestHandler<GetUserByIdQuery, UserDto?>
+{
+    private readonly IUserRepository _repository;
+    private readonly IMapper _mapper;
+    
+    public GetUserByIdHandler(IUserRepository repository, IMapper mapper)
+    {
+        _repository = repository;
+        _mapper = mapper;
+    }
+    
+    public async Task<UserDto?> Handle(
+        GetUserByIdQuery request, 
+        CancellationToken cancellationToken)
+    {
+        var user = await _repository.GetByIdAsync(request.Id);
+        return user is null ? null : _mapper.Map<UserDto>(user);
+    }
+}
+
+public class CreateUserHandler : IRequestHandler<CreateUserCommand, int>
+{
+    private readonly IUserRepository _repository;
+    
+    public async Task<int> Handle(
+        CreateUserCommand request,
+        CancellationToken cancellationToken)
+    {
+        var user = new User(request.Name, request.Email);
+        await _repository.AddAsync(user);
+        return user.Id;
+    }
+}
+
+// 3. Use in controller
+[ApiController]
+public class UsersController : ControllerBase
+{
+    private readonly IMediator _mediator;
+    
+    public UsersController(IMediator mediator) => _mediator = mediator;
+    
+    [HttpGet("{id}")]
+    public async Task<ActionResult<UserDto>> Get(int id)
+    {
+        var result = await _mediator.Send(new GetUserByIdQuery(id));
+        return result is null ? NotFound() : Ok(result);
+    }
+    
+    [HttpPost]
+    public async Task<ActionResult<int>> Create(CreateUserCommand command)
+    {
+        var id = await _mediator.Send(command);
+        return CreatedAtAction(nameof(Get), new { id }, id);
+    }
+}`,
+          useCases: [
+            "Implementing CQRS (Command Query Responsibility Segregation) - separate read models (optimized for queries) from write models (enforcing business rules), each with focused handlers",
+            "Keeping controllers thin - controllers become simple dispatchers that validate input and send commands; all business logic lives in testable handlers",
+            "Cross-cutting concerns via pipeline behaviors - add logging, validation, transaction management, or caching that applies to all requests without modifying individual handlers",
+            "Decoupling features in modular monoliths - features communicate through the mediator rather than direct dependencies, making it easier to extract microservices later",
+            "Event-driven architecture with notifications - publish domain events (INotification) that multiple handlers can respond to independently"
+          ],
+          pitfalls: [
+            "Using MediatR for everything including simple CRUD - for basic operations, MediatR adds indirection without benefit; it shines when you have complex business logic or cross-cutting concerns",
+            "Handlers growing too large - a handler should do one thing; if it's orchestrating many operations, extract services or use pipeline behaviors",
+            "Not understanding the difference between IRequest<T> (one handler, returns response) and INotification (many handlers, fire-and-forget) leads to incorrect usage",
+            "Over-relying on pipeline behaviors for business logic - behaviors are for cross-cutting concerns like logging and validation, not core business rules which belong in handlers",
+            "Scattered request/handler files make navigation difficult - organize by feature (Users/Commands, Users/Queries) not by type (Commands/, Handlers/)"
+          ],
+          bestPractices: [
+            "Organize by feature, not by type - keep GetUserByIdQuery and GetUserByIdHandler in the same folder/file for easy navigation and cohesion",
+            "Use pipeline behaviors for cross-cutting concerns: ValidationBehavior<TRequest, TResponse> validates all requests before they reach handlers",
+            "Keep handlers focused on a single responsibility - extract complex logic to domain services that handlers orchestrate",
+            "Use records for immutable requests: public record GetUserQuery(int Id) : IRequest<UserDto?> - immutable, value equality, concise syntax",
+            "Consider FluentValidation integration for request validation - fail fast before handlers execute with detailed validation errors"
+          ],
+          goodExample: {
+            code: `// Feature-organized structure with validation
+// Features/Orders/Commands/CreateOrder.cs
+public record CreateOrderCommand(
+    int CustomerId,
+    List<OrderItemDto> Items) : IRequest<OrderResult>;
+
+public class CreateOrderValidator : AbstractValidator<CreateOrderCommand>
+{
+    public CreateOrderValidator()
+    {
+        RuleFor(x => x.CustomerId).GreaterThan(0);
+        RuleFor(x => x.Items).NotEmpty();
+        RuleForEach(x => x.Items).ChildRules(item =>
+        {
+            item.RuleFor(i => i.Quantity).GreaterThan(0);
+        });
+    }
+}
+
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderResult>
+{
+    private readonly IOrderService _orderService;
+    
+    public CreateOrderHandler(IOrderService orderService)
+    {
+        _orderService = orderService;
+    }
+    
+    public async Task<OrderResult> Handle(
+        CreateOrderCommand request,
+        CancellationToken cancellationToken)
+    {
+        return await _orderService.CreateOrderAsync(
+            request.CustomerId, 
+            request.Items,
+            cancellationToken);
+    }
+}
+
+// Validation pipeline behavior (runs before all handlers)
+public class ValidationBehavior<TRequest, TResponse> 
+    : IPipelineBehavior<TRequest, TResponse>
+{
+    private readonly IEnumerable<IValidator<TRequest>> _validators;
+    
+    public async Task<TResponse> Handle(
+        TRequest request,
+        RequestHandlerDelegate<TResponse> next,
+        CancellationToken cancellationToken)
+    {
+        var failures = _validators
+            .Select(v => v.Validate(request))
+            .SelectMany(r => r.Errors)
+            .Where(f => f != null)
+            .ToList();
+            
+        if (failures.Any())
+            throw new ValidationException(failures);
+            
+        return await next();
+    }
+}`,
+            explanation: "Feature organization, FluentValidation integration, pipeline behaviors for cross-cutting concerns"
+          },
+          badExample: {
+            code: `// Overusing MediatR for simple CRUD
+public record GetAllUsersQuery : IRequest<List<User>>;
+
+public class GetAllUsersHandler : IRequestHandler<GetAllUsersQuery, List<User>>
+{
+    private readonly DbContext _context;
+    
+    public async Task<List<User>> Handle(
+        GetAllUsersQuery request,
+        CancellationToken cancellationToken)
+    {
+        // Just wrapping a one-liner - unnecessary indirection!
+        return await _context.Users.ToListAsync();
+    }
+}
+
+// Fat handlers with too many responsibilities
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, Order>
+{
+    public async Task<Order> Handle(CreateOrderCommand request, CancellationToken ct)
+    {
+        // Validation logic (should be in validator)
+        if (request.Items.Count == 0) throw new Exception();
+        
+        // Business logic (should be in domain service)
+        var order = new Order();
+        foreach (var item in request.Items) { /* ... */ }
+        
+        // Email sending (should be separate handler via notification)
+        await SendConfirmationEmail(order);
+        
+        // Audit logging (should be in pipeline behavior)
+        await LogAudit(order);
+        
+        return order;
+    }
+}`,
+            explanation: "MediatR for trivial operations, handlers doing too much, mixing concerns"
+          }
+        }
+      },
+      {
+        id: "pattern-result",
+        title: "Result Pattern",
+        category: "Modern Patterns",
+        description: "Explicit error handling without exceptions for expected failures",
+        content: {
+          definition: "The Result Pattern encapsulates the outcome of an operation as either a success with a value or a failure with error information. Instead of throwing exceptions for expected failure cases (validation errors, not found, business rule violations), methods return a Result<T> that callers must explicitly handle. This makes failure a first-class concept in your API.",
+          syntax: `// Result type implementation
+public class Result<T>
+{
+    public bool IsSuccess { get; }
+    public bool IsFailure => !IsSuccess;
+    public T? Value { get; }
+    public Error Error { get; }
+    
+    private Result(T value)
+    {
+        IsSuccess = true;
+        Value = value;
+        Error = Error.None;
+    }
+    
+    private Result(Error error)
+    {
+        IsSuccess = false;
+        Value = default;
+        Error = error;
+    }
+    
+    public static Result<T> Success(T value) => new(value);
+    public static Result<T> Failure(Error error) => new(error);
+    
+    public TResult Match<TResult>(
+        Func<T, TResult> onSuccess,
+        Func<Error, TResult> onFailure)
+    {
+        return IsSuccess ? onSuccess(Value!) : onFailure(Error);
+    }
+}
+
+public record Error(string Code, string Message)
+{
+    public static readonly Error None = new(string.Empty, string.Empty);
+    public static readonly Error NotFound = new("NotFound", "Resource not found");
+    public static readonly Error Validation = new("Validation", "Validation failed");
+}
+
+// Usage in service
+public class UserService
+{
+    public async Task<Result<User>> GetByIdAsync(int id)
+    {
+        var user = await _repository.GetByIdAsync(id);
+        
+        return user is null
+            ? Result<User>.Failure(Error.NotFound)
+            : Result<User>.Success(user);
+    }
+    
+    public async Task<Result<User>> CreateAsync(CreateUserDto dto)
+    {
+        if (await _repository.ExistsWithEmailAsync(dto.Email))
+            return Result<User>.Failure(
+                new Error("DuplicateEmail", "Email already registered"));
+        
+        var user = new User(dto.Name, dto.Email);
+        await _repository.AddAsync(user);
+        
+        return Result<User>.Success(user);
+    }
+}`,
+          useCases: [
+            "Handling expected failures like validation errors, not found, or business rule violations - these aren't exceptional; they're normal application flow that callers should handle explicitly",
+            "Making error handling explicit at compile time - unlike exceptions, Result<T> forces callers to consider the failure case; you can't accidentally ignore it",
+            "Replacing boolean success returns that lose error context - instead of (bool success, string? error) tuples, use a proper Result type with rich error information",
+            "API responses with meaningful error details - map Result failures to appropriate HTTP status codes and problem details without try-catch everywhere",
+            "Chaining operations with early exit - railway-oriented programming where you chain operations and stop at the first failure without nested if-checks"
+          ],
+          pitfalls: [
+            "Using Result for truly exceptional conditions - out of memory, network timeouts, and configuration errors are exceptional and should throw; Result is for expected business failures",
+            "Ignoring the Result - calling GetUserAsync(id) without checking IsSuccess defeats the purpose; the pattern only works if you handle both cases",
+            "Overly complex Result types with too many states - keep it simple: Success with value or Failure with error; don't add Warning, Partial, Pending states unless truly needed",
+            "Not providing enough error context - Error.Failure('ValidationFailed') tells the caller nothing; include specific details: new Error('InvalidEmail', 'Email format is invalid')",
+            "Mixing Result and exceptions in the same codebase inconsistently - choose one approach per layer; don't force callers to handle both try-catch AND Result checking"
+          ],
+          bestPractices: [
+            "Use Result for business/validation failures and exceptions for infrastructure/unexpected errors - 'user not found' is a Result; 'database connection lost' is an exception",
+            "Create domain-specific error types: UserErrors.NotFound, UserErrors.DuplicateEmail rather than generic error codes for better expressiveness",
+            "Use Match() for exhaustive handling: result.Match(onSuccess: user => Ok(user), onFailure: error => BadRequest(error)) ensures both cases are handled",
+            "Consider libraries like FluentResults, ErrorOr, or OneOf for production - they provide implicit conversions, LINQ support, and additional features",
+            "Map Results to appropriate HTTP responses in controllers - NotFound errors become 404, Validation errors become 400, Unauthorized becomes 401"
+          ],
+          goodExample: {
+            code: `// Domain-specific errors
+public static class UserErrors
+{
+    public static Error NotFound(int id) => 
+        new("User.NotFound", $"User with ID {id} was not found");
+    
+    public static Error DuplicateEmail(string email) => 
+        new("User.DuplicateEmail", $"Email {email} is already registered");
+    
+    public static Error InvalidAge => 
+        new("User.InvalidAge", "Age must be between 0 and 150");
+}
+
+// Service returning Result
+public class UserService
+{
+    public async Task<Result<UserDto>> CreateUserAsync(CreateUserDto dto)
+    {
+        // Validation - return failure, don't throw
+        if (dto.Age < 0 || dto.Age > 150)
+            return Result<UserDto>.Failure(UserErrors.InvalidAge);
+        
+        if (await _repository.ExistsWithEmailAsync(dto.Email))
+            return Result<UserDto>.Failure(
+                UserErrors.DuplicateEmail(dto.Email));
+        
+        var user = new User(dto.Name, dto.Email, dto.Age);
+        await _repository.AddAsync(user);
+        
+        return Result<UserDto>.Success(_mapper.Map<UserDto>(user));
+    }
+}
+
+// Controller using Match for clean handling
+[HttpPost]
+public async Task<IActionResult> Create(CreateUserDto dto)
+{
+    var result = await _userService.CreateUserAsync(dto);
+    
+    return result.Match(
+        onSuccess: user => CreatedAtAction(nameof(GetById), 
+            new { id = user.Id }, user),
+        onFailure: error => error.Code switch
+        {
+            "User.NotFound" => NotFound(error.Message),
+            "User.DuplicateEmail" => Conflict(error.Message),
+            _ => BadRequest(error.Message)
+        }
+    );
+}`,
+            explanation: "Domain-specific errors, explicit failure handling with Match, proper HTTP status mapping"
+          },
+          badExample: {
+            code: `// Throwing exceptions for expected cases
+public class UserService
+{
+    public async Task<User> GetByIdAsync(int id)
+    {
+        var user = await _repository.GetByIdAsync(id);
+        if (user is null)
+            throw new NotFoundException($"User {id} not found");
+        // Caller must remember to try-catch!
+        return user;
+    }
+}
+
+// Ignoring the Result
+public async Task<IActionResult> Get(int id)
+{
+    var result = await _userService.GetByIdAsync(id);
+    return Ok(result.Value); // Crashes if IsFailure!
+}
+
+// Generic errors without context
+public async Task<Result<User>> CreateAsync(CreateUserDto dto)
+{
+    if (await _repository.ExistsWithEmailAsync(dto.Email))
+        return Result<User>.Failure(Error.Validation); // What failed? No idea!
+    // ...
+}`,
+            explanation: "Exceptions for expected failures, ignoring Result, generic errors without details"
+          }
+        }
+      }
+    ]
   }
 ];
 
