@@ -127,10 +127,10 @@ public class Dog : Animal // Derived class
             "Framework extension points"
           ],
           pitfalls: [
-            "Deep inheritance hierarchies (prefer composition)",
-            "Inheriting just for code reuse (violates LSP)",
-            "Fragile base class problem",
-            "Tight coupling between base and derived classes"
+            "Deep inheritance hierarchies make code harder to understand and maintain - prefer composition where objects contain other objects rather than inheriting from them",
+            "Inheriting just for code reuse violates the Liskov Substitution Principle (LSP) - if a derived class can't be used everywhere the base class is expected (because it changes behavior in unexpected ways), the inheritance relationship is semantically wrong. For example, a Square inheriting from Rectangle breaks LSP because setting width shouldn't also change height",
+            "Fragile base class problem: changes to base class implementation can unexpectedly break derived classes that depend on internal behaviors, even if the public interface remains unchanged",
+            "Tight coupling between base and derived classes means derived classes become dependent on base class implementation details, making both harder to modify independently"
           ],
           bestPractices: [
             "Favor composition over inheritance",
