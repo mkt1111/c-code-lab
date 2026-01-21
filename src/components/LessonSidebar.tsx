@@ -1,5 +1,5 @@
 import { useLocation, Link } from "react-router-dom";
-import { CheckCircle2, Circle, ChevronDown, ChevronRight } from "lucide-react";
+import { CheckCircle2, Circle, ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import {
   Sidebar,
@@ -16,13 +16,25 @@ import { categories, getAllLessons } from "@/data/lessons";
 import { useLessonProgress } from "@/hooks/useLessonProgress";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export const LessonSidebar = () => {
   const location = useLocation();
   const currentPath = location.pathname;
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const { isCompleted, getProgress } = useLessonProgress();
+  const { isCompleted, getProgress, resetProgress } = useLessonProgress();
   const allLessons = getAllLessons();
   const progress = getProgress(allLessons.length);
 
@@ -56,6 +68,34 @@ export const LessonSidebar = () => {
               <span>{progress.completed} / {progress.total}</span>
             </div>
             <Progress value={progress.percentage} className="h-2" />
+            {progress.completed > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="w-full mt-2 text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    Reset Progress
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Reset all progress?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will clear all your completed lessons. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={resetProgress} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Reset
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         )}
 
