@@ -12,6 +12,7 @@ interface LessonProgressContextType {
   isCompleted: (lessonId: string) => boolean;
   getProgress: (totalLessons: number) => { completed: number; total: number; percentage: number };
   resetProgress: () => void;
+  resetKey: number; // Key to force quiz components to reset
 }
 
 const LessonProgressContext = createContext<LessonProgressContextType | undefined>(undefined);
@@ -29,6 +30,8 @@ export const LessonProgressProvider = ({ children }: { children: ReactNode }) =>
     }
     return new Set();
   });
+  
+  const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => {
     try {
@@ -64,10 +67,11 @@ export const LessonProgressProvider = ({ children }: { children: ReactNode }) =>
   const resetProgress = useCallback(() => {
     setCompletedLessons(new Set());
     localStorage.removeItem(STORAGE_KEY);
+    setResetKey(prev => prev + 1); // Increment to force quiz remounts
   }, []);
 
   return (
-    <LessonProgressContext.Provider value={{ completedLessons, markCompleted, isCompleted, getProgress, resetProgress }}>
+    <LessonProgressContext.Provider value={{ completedLessons, markCompleted, isCompleted, getProgress, resetProgress, resetKey }}>
       {children}
     </LessonProgressContext.Provider>
   );
